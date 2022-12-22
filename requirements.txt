@@ -1,6 +1,6 @@
 Brotli==1.0.9
 certifi==2022.12.7
-charset-normalizer==3.0.1
+charset-normalizer==2.0.0
 click==8.0.4
 ConfigArgParse==1.5.3
 dataclasses==0.8
