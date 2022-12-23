@@ -1,5 +1,7 @@
 import random
-from locust import User, TaskSet, events, task
+
+import requests
+from locust import User, TaskSet, events, task, HttpUser
 import json
 import time
 from threading import Thread
@@ -136,6 +138,7 @@ class Client:
             if subscription in self.subscriptions:
                 onreceive = self.subscriptions[subscription]
                 messageID = frame.headers['message-id']
+
                 def ack(headers):
                     if headers is None:
                         headers = {}
@@ -260,7 +263,8 @@ class Client:
 
 class StompClient(object):
     def __init__(self, host, port):
-        self.conn = Client("ws://localhost:8080/connect/websocket")
+        # self.conn = Client("ws://localhost:8080/connect/websocket")
+        self.conn = Client("wss://spring.mquiz.site/connect/websocket")
 
     def __del__(self):
         if self.conn:
@@ -293,33 +297,36 @@ class StompClient(object):
             # events.request_success.fire(request_type="stomp", name="connect", response_time=total_time,
             #                             response_length=0)
 
-    def send(self, body, destination):
-        print("send")
+    def send(self, body, destination, name):
+        # print("send")
         start_time = time.time()
         try:
             self.conn.send(destination, body=body)
         except Exception as e:
             total_time = int((time.time() - start_time) * 1000)
-            events.request_failure.fire(request_type="stomp", name="send", response_time=total_time, exception=e, response_length=0)
+            events.request_failure.fire(request_type="stomp", name=name, response_time=total_time, exception=e,
+                                        response_length=0)
         else:
             total_time = int((time.time() - start_time) * 1000)
-            events.request_success.fire(request_type="stomp", name="send", response_time=total_time, response_length=0)
+            events.request_success.fire(request_type="stomp", name=name, response_time=total_time, response_length=0)
 
-    def subscribe(self, destination, callback=None, headers=None):
-        print("subscribe")
+    def subscribe(self, destination, callback=None, headers=None, name=None):
+        # print("subscribe")
         print(str(destination))
         start_time = time.time()
         try:
             self.conn.subscribe(self, destination)
         except Exception as e:
             total_time = int((time.time() - start_time) * 1000)
-            events.request_failure.fire(request_type="stomp", name="subscribe", response_time=total_time, exception=e, response_length=0)
+            events.request_failure.fire(request_type="stomp", name=name, response_time=total_time, exception=e,
+                                        response_length=0)
         else:
             total_time = int((time.time() - start_time) * 1000)
-            events.request_success.fire(request_type="stomp", name="subscribe", response_time=total_time, response_length=0)
+            events.request_success.fire(request_type="stomp", name=name, response_time=total_time,
+                                        response_length=0)
 
     def disconnect(self, disconnectCallback=None, headers=None):
-        print("disconnect")
+        # print("disconnect")
         self.conn.disconnect()
 
 
@@ -334,24 +341,20 @@ class StompLocust(User):
 
     def __init__(self, *args, **kwargs):
         super(StompLocust, self).__init__(*args, **kwargs)
-        self.client = StompClient(self.host, self.port)
+        self.client_stomp = StompClient(self.host, self.port)
 
     def connect(self):
-        self.client.connect()
+        self.client_stomp.connect()
 
-    def send(self, destination, body):
-        self.client.send(self, body, destination)
+    def send(self, destination, body, name):
+        self.client_stomp.send(self, body, destination, name)
 
     def disconnect(self):
-        self.client.disconnect()
+        self.client_stomp.disconnect()
 
-    def subscribe(self, destination, callback=None, headers=None):
+    def subscribe(self, destination, callback=None, headers=None, name=None):
         print(str(destination))
-        self.client.subscribe(self,destination)
-
-
-
-
+        self.client_stomp.subscribe(self, destination, name)
 
 
 def random_str():
@@ -359,35 +362,104 @@ def random_str():
     return ''.join(random.sample(a2z, 6))
 
 
+def random_num():
+    return random.randint(2000, 5000)
 
 
-class TestUser(StompLocust):
-    host = "localhost"
-    port = 8080
+class TestUser(StompLocust, HttpUser):
+    host = "https://spring.mquiz.site/"
+    port = 80
     min_wait = 100
     max_wait = 1000
-    subDestination = '/quiz/123456'
-    # def on_start(self):
-        # self.client.connect()
-        # time.sleep(2)
-        # self.client.subscribe(destination=self.subDestination)
-
-    # def on_stop(self):
-    #     self.client.disconnect()
 
     @task
-    def send_data(self):
-        self.client.connect();
-        time.sleep(2)
-        self.client.subscribe(destination=self.subDestination)
+    def Play(self):
         time.sleep(1)
-        self.client.send(body=json.dumps({'pinNum': '123456'}), destination="/quiz/Test")
-        time.sleep(1)
-        self.client.send(body=json.dumps({'nickName': 'test'}), destination="/quiz/Test")
-        time.sleep(1)
-        for i in range(10):
-            self.client.send(body=json.dumps({'answer': random_str()}), destination="/quiz/Test")
-            time.sleep(1)
-        self.client.disconnect()
-        time.sleep(5)
+        # HOST 게임 생성
+        response = self.client.post("https://spring.mquiz.site/v1/host/createPlay",
+                                    json={"id": "1b448930-1423-425f-8e9d-1a128d4c9922"}, name="Host 게임방 생성")
+        # response = self.client.post("http://localhost:8080/v1/host/createPlay",
+        #                             json={"id": "1b448930-1423-425f-8e9d-1a128d4c9922"}, name="Host 게임방 생성")
+        print(json.loads(response.text)['data'])
+        pinNum = json.loads(response.text)['data']
 
+        # time.sleep(1)
+
+        # HOST subscribe
+        self.client_stomp.connect();
+        # time.sleep(2)
+        self.client_stomp.subscribe(destination="quiz/" + pinNum, name="Host 방 참여")
+        # time.sleep(1)
+
+        # CLIENT 게임 참여(50명)
+        clientList = []  # 50명의 클라이언트
+        clientCnt = 3
+        for i in range(clientCnt):
+            clientList.append("client" + str(i))
+            print("clientList : " + str(clientList[i]))
+            self.client_stomp.subscribe(destination="quiz/" + pinNum, name="CLIENT 방 참여")
+            # time.sleep(1)
+            self.client_stomp.send(body=json.dumps({'pinNum': pinNum, 'nickName': clientList[i]}),
+                                   destination="/quiz/setnickname", name="CLIENT 닉네임 설정")
+            time.sleep(1)
+
+        # 게임 진행(5문제)
+        for i in range(1, 2):
+            self.client_stomp.send(body=json.dumps({'pinNum': pinNum}), destination="/quiz/start",
+                                   name="라운드 시작")  # 라운드 시작
+            time.sleep(1)
+            # CLIENT 정답 제출
+            for j in range(clientCnt):
+                self.client_stomp.send(
+                    body=json.dumps({'pinNum': pinNum, 'nickName': clientList[j], 'quiz': {
+                        "question": "test",
+                        "answer": [
+                            "num1"
+                        ],
+                        "useScore": True,
+                        "rate": 1,
+                        "num": j+1,
+                        "choiceList": {
+                            "num1": "test",
+                            "num4": "test",
+                            "num3": "",
+                            "num2": ""
+                        },
+                        "media": {
+                            "type": "image",
+                            "url": ""
+                        },
+                        "time": "10",
+                        "type": "선택형"
+                    }, 'submit': {'quizNum': i, 'answer': ['num1'],
+                                  'answerTime': random_num(), 'isAns': True}}),
+                    destination="/quiz/submit", name="CLIENT 정답 제출")  # 정답 제출
+                time.sleep(1)
+            self.client_stomp.send(body=json.dumps({'pinNum': pinNum}), destination="/quiz/result",
+                                   name="라운드 끝")  # 라운드 끝
+
+        self.client_stomp.send(body=json.dumps({'pinNum': pinNum}), destination="/quiz/final",
+                               name="게임 마무리")  # 게임 마무리
+
+        self.client_stomp.send(body=json.dumps({'pinNum': pinNum}), destination="/quiz/end",
+                               name="게임 종료")  # 게임 종료
+
+        self.client.post("https://h0tp3laqa6.execute-api.ap-northeast-3.amazonaws.com/v1/log", json={
+            "showid": "showid",
+            "email": "Locust",
+            "showtitle": "showtitle",
+            "playdate": "playdate",
+            "quizcount": "quizcount",
+            "usercount": "usercount",
+            "userdata": [
+                {
+                    "nickname": "test",
+                    "rank": "1",
+                    "rankscore": "12345",
+                    "correctcount": "12",
+                    "iscorrectlist": "0,1,-1"
+                }
+            ]
+        }, name="로그 전송")
+        time.sleep(1)
+        self.client.disconnect()
