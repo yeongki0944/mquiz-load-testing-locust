@@ -287,11 +287,11 @@ class StompClient(object):
                               timeout=0)
         except Exception as e:
             total_time = int((time.time() - start_time) * 1000)
-            events.request_failure.fire(request_type="stomp", name="connect", response_time=total_time, exception=e, response_length=0)
+            # events.request_failure.fire(request_type="stomp", name="connect", response_time=total_time, exception=e, response_length=0)
         else:
             total_time = int((time.time() - start_time) * 1000)
-            events.request_success.fire(request_type="stomp", name="connect", response_time=total_time,
-                                        response_length=0)
+            # events.request_success.fire(request_type="stomp", name="connect", response_time=total_time,
+            #                             response_length=0)
 
     def send(self, body, destination):
         print("send")
@@ -367,15 +367,27 @@ class TestUser(StompLocust):
     min_wait = 100
     max_wait = 1000
     subDestination = '/quiz/123456'
-    def on_start(self):
-        self.client.connect()
-        time.sleep(2)
-        self.client.subscribe(destination=self.subDestination)
+    # def on_start(self):
+        # self.client.connect()
+        # time.sleep(2)
+        # self.client.subscribe(destination=self.subDestination)
 
-    def on_stop(self):
-        self.client.disconnect()
+    # def on_stop(self):
+    #     self.client.disconnect()
 
     @task
     def send_data(self):
+        self.client.connect();
+        time.sleep(2)
+        self.client.subscribe(destination=self.subDestination)
+        time.sleep(1)
         self.client.send(body=json.dumps({'pinNum': '123456'}), destination="/quiz/Test")
         time.sleep(1)
+        self.client.send(body=json.dumps({'nickName': 'test'}), destination="/quiz/Test")
+        time.sleep(1)
+        for i in range(10):
+            self.client.send(body=json.dumps({'answer': random_str()}), destination="/quiz/Test")
+            time.sleep(1)
+        self.client.disconnect()
+        time.sleep(5)
+
