@@ -119,6 +119,7 @@ class Client:
         logging.debug(error)
 
     def _on_message(self, ws_app, message, *args):
+        print("\n<<< " + str(message))
         logging.debug("\n<<< " + str(message))
         frame = Frame.unmarshall_single(message)
         _results = []
@@ -128,13 +129,13 @@ class Client:
             if self._connectCallback is not None:
                 _results.append(self._connectCallback(frame))
         elif frame.command == "MESSAGE":
+            print(str(frame))
 
             subscription = frame.headers['subscription']
 
             if subscription in self.subscriptions:
                 onreceive = self.subscriptions[subscription]
                 messageID = frame.headers['message-id']
-
                 def ack(headers):
                     if headers is None:
                         headers = {}
@@ -154,6 +155,8 @@ class Client:
                 logging.debug(info)
                 _results.append(info)
         elif frame.command == 'RECEIPT':
+            print("RECEIPT")
+            print(str(frame))
             pass
         elif frame.command == 'ERROR':
             if self.errorCallback is not None:
@@ -216,13 +219,17 @@ class Client:
         return self._transmit("SEND", headers, body)
 
     def subscribe(self, destination, callback=None, headers=None):
+        print("sub destination : ", destination)
+        print("sub destination : ", str(destination))
         if headers is None:
             headers = {}
         if 'id' not in headers:
             headers["id"] = "sub-" + str(self.counter)
             self.counter += 1
-        headers['destination'] = destination
-        self.subscriptions[headers["id"]] = callback
+        # headers['destination'] = destination
+        headers['destination'] = "/pin/123456"
+        # self.subscriptions[headers["id"]] = callback
+        print(str(headers))
         self._transmit("SUBSCRIBE", headers)
 
         def unsubscribe():
@@ -298,9 +305,23 @@ class StompClient(object):
             total_time = int((time.time() - start_time) * 1000)
             events.request_success.fire(request_type="stomp", name="send", response_time=total_time, response_length=0)
 
+    def subscribe(self, destination, callback=None, headers=None):
+        print("subscribe")
+        print(str(destination))
+        start_time = time.time()
+        try:
+            self.conn.subscribe(self, destination)
+        except Exception as e:
+            total_time = int((time.time() - start_time) * 1000)
+            events.request_failure.fire(request_type="stomp", name="subscribe", response_time=total_time, exception=e, response_length=0)
+        else:
+            total_time = int((time.time() - start_time) * 1000)
+            events.request_success.fire(request_type="stomp", name="subscribe", response_time=total_time, response_length=0)
+
     def disconnect(self, disconnectCallback=None, headers=None):
         print("disconnect")
         self.conn.disconnect()
+
 
 class StompLocust(User):
     """
@@ -324,10 +345,20 @@ class StompLocust(User):
     def disconnect(self):
         self.client.disconnect()
 
+    def subscribe(self, destination, callback=None, headers=None):
+        print(str(destination))
+        self.client.subscribe(self,destination)
+
+
+
+
+
 
 def random_str():
     a2z = [chr(i) for i in range(97, 123)]
     return ''.join(random.sample(a2z, 6))
+
+
 
 
 class TestUser(StompLocust):
@@ -335,14 +366,16 @@ class TestUser(StompLocust):
     port = 8080
     min_wait = 100
     max_wait = 1000
-
+    subDestination = '/quiz/123456'
     def on_start(self):
         self.client.connect()
+        time.sleep(2)
+        self.client.subscribe(destination=self.subDestination)
 
     def on_stop(self):
         self.client.disconnect()
 
     @task
     def send_data(self):
-        self.client.send(body=json.dumps({'pinNum': '1123213'}), destination="/quiz/Test")
+        self.client.send(body=json.dumps({'pinNum': '123456'}), destination="/quiz/Test")
         time.sleep(1)
