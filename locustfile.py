@@ -378,9 +378,7 @@ class TestUser(StompLocust, HttpUser):
         # HOST 게임 생성
         response = self.client.post("https://spring.mquiz.site/v1/host/createPlay",
                                     json={"id": "1b448930-1423-425f-8e9d-1a128d4c9922"}, name="Host 게임방 생성")
-        # response = self.client.post("http://localhost:8080/v1/host/createPlay",
-        #                             json={"id": "1b448930-1423-425f-8e9d-1a128d4c9922"}, name="Host 게임방 생성")
-        print(json.loads(response.text)['data'])
+        # print(json.loads(response.text)['data'])
         pinNum = json.loads(response.text)['data']
 
         # time.sleep(1)
@@ -389,11 +387,12 @@ class TestUser(StompLocust, HttpUser):
         self.client_stomp.connect();
         # time.sleep(2)
         self.client_stomp.subscribe(destination="quiz/" + pinNum, name="Host 방 참여")
-        # time.sleep(1)
+
+        time.sleep(5) # 방 생성 시점으로부터 5초 후에 참여자가 들어옴
 
         # CLIENT 게임 참여(50명)
         clientList = []  # 50명의 클라이언트
-        clientCnt = 3
+        clientCnt = 50
         for i in range(clientCnt):
             clientList.append("client" + str(i))
             print("clientList : " + str(clientList[i]))
@@ -401,13 +400,13 @@ class TestUser(StompLocust, HttpUser):
             # time.sleep(1)
             self.client_stomp.send(body=json.dumps({'pinNum': pinNum, 'nickName': clientList[i]}),
                                    destination="/quiz/setnickname", name="CLIENT 닉네임 설정")
-            time.sleep(1)
+            time.sleep(0.5) # 0.5초 간격으로 참여
 
-        # 게임 진행(5문제)
-        for i in range(1, 2):
+        # 게임 진행(10문제)
+        for i in range(1, 11):
             self.client_stomp.send(body=json.dumps({'pinNum': pinNum}), destination="/quiz/start",
                                    name="라운드 시작")  # 라운드 시작
-            time.sleep(1)
+            time.sleep(4)
             # CLIENT 정답 제출
             for j in range(clientCnt):
                 self.client_stomp.send(
@@ -434,13 +433,15 @@ class TestUser(StompLocust, HttpUser):
                     }, 'submit': {'quizNum': i, 'answer': ['num1'],
                                   'answerTime': random_num(), 'isAns': True}}),
                     destination="/quiz/submit", name="CLIENT 정답 제출")  # 정답 제출
-                time.sleep(1)
+                time.sleep(0.5) # 0.5초 간격으로 정답 제출
+            time.sleep(5) # 5초 후에 다음 라운드 시작
             self.client_stomp.send(body=json.dumps({'pinNum': pinNum}), destination="/quiz/result",
                                    name="라운드 끝")  # 라운드 끝
+            time.sleep(3)
 
         self.client_stomp.send(body=json.dumps({'pinNum': pinNum}), destination="/quiz/final",
                                name="게임 마무리")  # 게임 마무리
-
+        time.sleep(10)
         self.client_stomp.send(body=json.dumps({'pinNum': pinNum}), destination="/quiz/end",
                                name="게임 종료")  # 게임 종료
 
@@ -461,5 +462,7 @@ class TestUser(StompLocust, HttpUser):
                 }
             ]
         }, name="로그 전송")
-        time.sleep(1)
-        self.client.disconnect()
+
+        time.sleep(660) # 1시간당 약 3회의 게임이 진행되므로 1시간 10분 대기
+        # time.sleep(99999999)
+        # self.client_stomp.disconnect()
